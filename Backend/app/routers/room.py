@@ -6,6 +6,7 @@ from app.models.room import Room, RoomState
 from app.models.video import Video
 from app.schemas import RoomCreateRequest, RoomResponse, RoomStateResponse
 from app.storage import generate_room_id
+from app.auth import hash_secret
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -23,10 +24,14 @@ def create_room(body: RoomCreateRequest, db: Session = Depends(get_db)):
     # --- create room + initial state ---
     room_id = generate_room_id()
 
+    # Hash the host secret and store the hash on the room
+    host_secret_hash = hash_secret(body.host_secret)
+
     room = Room(
         room_id=room_id,
         video_id=body.video_id,
         owner_id=body.owner_id,
+        host_secret_hash=host_secret_hash,
     )
     room_state = RoomState(room_id=room_id)
 

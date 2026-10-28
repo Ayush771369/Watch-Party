@@ -12,6 +12,7 @@ class Room(Base):
     room_id = Column(String, primary_key=True, index=True)
     video_id = Column(String, ForeignKey("videos.video_id"), nullable=False, index=True)
     owner_id = Column(String, nullable=False)
+    host_secret_hash = Column(String, nullable=True)  # bcrypt hash of host secret; stored as '' when not set
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=True)
 

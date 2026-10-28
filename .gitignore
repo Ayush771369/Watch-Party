@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local databases and uploaded media
+Backend/*.db
+Backend/*.sqlite
+Backend/*.sqlite3
+Backend/uploads/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Node dependencies and build output
+node_modules/
+Frontend/dist/
+
+# Local tooling and temporary files
+.vscode/
+*.bak

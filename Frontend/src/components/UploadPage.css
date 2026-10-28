@@ -1,0 +1,846 @@
+/* ==========================================================================
+   Watch Party — Upload Page
+   Theme: Cozy Violet / Deep Plum & Lavender with Warm Cream & Coral Accents
+   Matches RoomPage design system and tokens
+   ========================================================================== */
+
+:root {
+  --wp-bg-base: #0f0a1c;
+  --wp-bg-surface: #18112b;
+  --wp-bg-surface-hover: #22183d;
+  --wp-bg-card: rgba(28, 20, 50, 0.85);
+  --wp-bg-card-subtle: rgba(255, 255, 255, 0.03);
+
+  --wp-border-subtle: rgba(255, 255, 255, 0.08);
+  --wp-border-accent: rgba(167, 139, 250, 0.25);
+  --wp-border-focus: #a78bfa;
+
+  --wp-lavender: #a78bfa;
+  --wp-lavender-light: #c4b5fd;
+  --wp-lavender-glow: rgba(167, 139, 250, 0.15);
+
+  --wp-coral: #fb7185;
+  --wp-coral-hover: #fda4af;
+  --wp-coral-glow: rgba(251, 113, 133, 0.2);
+
+  --wp-peach: #fb923c;
+  --wp-gold: #facc15;
+  --wp-emerald: #34d399;
+  --wp-emerald-glow: rgba(52, 211, 153, 0.2);
+
+  --wp-text-cream: #fdfcf7;
+  --wp-text-secondary: #c7bed9;
+  --wp-text-muted: #8b809f;
+
+  --wp-radius-sm: 8px;
+  --wp-radius-md: 14px;
+  --wp-radius-lg: 20px;
+  --wp-radius-pill: 9999px;
+
+  --wp-shadow-card: 0 16px 36px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--wp-border-subtle);
+}
+
+/* Page Canvas */
+.upload-page {
+  min-height: 100vh;
+  background-color: var(--wp-bg-base);
+  background-image:
+    radial-gradient(circle at 15% 15%, rgba(139, 92, 246, 0.14) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(251, 113, 133, 0.1) 0%, transparent 40%),
+    linear-gradient(180deg, #120c22 0%, var(--wp-bg-base) 100%);
+  color: var(--wp-text-cream);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+  padding: 1.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+/* Ambient Glow Blobs */
+.upload-page .ambient-glow {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(90px);
+}
+
+.upload-page .ambient-glow-top {
+  width: 460px;
+  height: 460px;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.16) 0%, transparent 70%);
+  top: -120px;
+  left: 20%;
+}
+
+.upload-page .ambient-glow-bottom {
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(251, 113, 133, 0.12) 0%, transparent 70%);
+  bottom: -160px;
+  right: 12%;
+}
+
+/* Central Content Shell */
+.upload-shell {
+  max-width: 680px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* --------------------------------------------------------------------------
+   A. Header
+   -------------------------------------------------------------------------- */
+.upload-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--wp-bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--wp-border-subtle);
+  border-radius: var(--wp-radius-pill);
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.brand-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, var(--wp-text-cream) 30%, var(--wp-lavender-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-tagline {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--wp-text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   B. Hero Section
+   -------------------------------------------------------------------------- */
+.upload-hero {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 0 0.25rem;
+}
+
+.hero-deco {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.deco-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--wp-radius-md);
+  font-size: 1.4rem;
+  background: var(--wp-bg-card);
+  border: 1px solid var(--wp-border-subtle);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 0.25s ease;
+}
+
+.deco-a {
+  transform: rotate(-6deg);
+}
+
+.deco-b {
+  transform: translateY(-4px) scale(1.08);
+  border-color: var(--wp-border-accent);
+}
+
+.deco-c {
+  transform: rotate(6deg);
+}
+
+.upload-hero:hover .deco-a {
+  transform: rotate(-10deg) translateY(-2px);
+}
+
+.upload-hero:hover .deco-b {
+  transform: translateY(-6px) scale(1.12);
+}
+
+.upload-hero:hover .deco-c {
+  transform: rotate(10deg) translateY(-2px);
+}
+
+.hero-title {
+  margin: 0 0 0.5rem;
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--wp-text-cream) 20%, #fbcfe8 60%, var(--wp-lavender-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-subtitle {
+  margin: 0;
+  font-size: 0.98rem;
+  color: var(--wp-text-secondary);
+  line-height: 1.45;
+  max-width: 480px;
+}
+
+/* --------------------------------------------------------------------------
+   C-E. Main Upload Card
+   -------------------------------------------------------------------------- */
+.upload-card {
+  background: var(--wp-bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--wp-border-subtle);
+  border-radius: var(--wp-radius-lg);
+  padding: 2.25rem;
+  box-shadow: var(--wp-shadow-card);
+  display: flex;
+  flex-direction: column;
+}
+
+.card-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--wp-text-cream);
+  letter-spacing: -0.01em;
+}
+
+.card-subtitle {
+  margin: 0 0 1.5rem;
+  font-size: 0.88rem;
+  color: var(--wp-text-secondary);
+}
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Dropzone */
+.dropzone {
+  position: relative;
+  border: 2px dashed rgba(167, 139, 250, 0.35);
+  border-radius: var(--wp-radius-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(167, 139, 250, 0.04) 100%);
+  transition: all 0.25s ease;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.dropzone:hover {
+  border-color: var(--wp-lavender);
+  background: linear-gradient(180deg, rgba(167, 139, 250, 0.08) 0%, rgba(251, 113, 133, 0.05) 100%);
+  box-shadow: 0 0 24px var(--wp-lavender-glow);
+}
+
+.dropzone.dragging {
+  border-color: var(--wp-coral);
+  background: linear-gradient(180deg, rgba(251, 113, 133, 0.15) 0%, rgba(167, 139, 250, 0.1) 100%);
+  box-shadow: 0 0 32px var(--wp-coral-glow);
+  transform: scale(1.01);
+}
+
+.dropzone.dropzone-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Real input sits on top to receive mouse, touch, and keyboard interactions */
+.file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.dropzone:focus-within {
+  outline: 2px solid var(--wp-border-focus);
+  outline-offset: 3px;
+}
+
+.dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  pointer-events: none;
+}
+
+.dropzone-icon {
+  width: 52px;
+  height: 52px;
+  color: var(--wp-lavender);
+  margin-bottom: 0.75rem;
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+
+.dropzone:hover .dropzone-icon {
+  transform: translateY(-3px) scale(1.05);
+  color: var(--wp-lavender-light);
+}
+
+.dropzone-icon-drag {
+  color: var(--wp-coral);
+  animation: bounce-drop 0.8s infinite alternate ease-in-out;
+}
+
+@keyframes bounce-drop {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+.dropzone-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--wp-text-cream);
+}
+
+.dropzone-sub {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--wp-text-secondary);
+}
+
+.dropzone-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.35rem;
+  background: rgba(167, 139, 250, 0.15);
+  border: 1px solid var(--wp-border-accent);
+  border-radius: var(--wp-radius-pill);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--wp-lavender-light);
+  margin-bottom: 1.1rem;
+  transition: all 0.2s ease;
+}
+
+.dropzone:hover .dropzone-cta {
+  background: var(--wp-lavender);
+  color: #ffffff;
+  border-color: var(--wp-lavender);
+  box-shadow: 0 4px 14px var(--wp-lavender-glow);
+}
+
+.dropzone-formats {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--wp-text-muted);
+}
+
+.formats-label {
+  color: var(--wp-text-secondary);
+  font-weight: 500;
+  margin-right: 0.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   D. Selected File & Feedback
+   -------------------------------------------------------------------------- */
+.selected-file {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.15rem;
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid var(--wp-border-accent);
+  border-radius: var(--wp-radius-md);
+  animation: fadeIn 0.25s ease;
+}
+
+.file-icon {
+  width: 26px;
+  height: 26px;
+  color: var(--wp-lavender);
+  flex-shrink: 0;
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.file-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--wp-text-cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  font-size: 0.75rem;
+  color: var(--wp-lavender-light);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.remove-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--wp-border-subtle);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--wp-text-muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.remove-btn:hover:not(:disabled) {
+  background: rgba(251, 113, 133, 0.2);
+  border-color: var(--wp-coral);
+  color: #fca5a5;
+  transform: scale(1.05);
+}
+
+.remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Progress */
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: fadeIn 0.25s ease;
+}
+
+.progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--wp-radius-pill);
+  overflow: hidden;
+  border: 1px solid var(--wp-border-subtle);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--wp-lavender) 0%, var(--wp-coral) 100%);
+  border-radius: var(--wp-radius-pill);
+  transition: width 0.2s ease-out;
+  box-shadow: 0 0 10px var(--wp-coral-glow);
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--wp-lavender-light);
+}
+
+/* Error Alert */
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1.15rem;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: var(--wp-radius-md);
+  color: #fca5a5;
+  animation: fadeIn 0.25s ease;
+}
+
+.error-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.error-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.retry-btn {
+  background: rgba(248, 113, 113, 0.2);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fee2e2;
+  border-radius: var(--wp-radius-pill);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-btn:hover {
+  background: rgba(248, 113, 113, 0.35);
+}
+
+/* Success Messages */
+.success-message,
+.room-success-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: var(--wp-radius-md);
+  animation: fadeIn 0.25s ease;
+}
+
+.success-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--wp-emerald);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.success-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.success-title {
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #6ee7b7;
+}
+
+.success-detail {
+  margin: 0.2rem 0;
+  font-size: 0.82rem;
+  color: var(--wp-text-secondary);
+}
+
+.video-id code,
+.success-detail code {
+  display: inline-block;
+  margin-top: 0.2rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--wp-border-subtle);
+  border-radius: var(--wp-radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--wp-text-cream);
+  word-break: break-all;
+}
+
+.copied-notice {
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   E. Buttons
+   -------------------------------------------------------------------------- */
+.button-group {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.upload-btn {
+  flex: 1;
+  min-width: 180px;
+  padding: 0.9rem 1.5rem;
+  background: linear-gradient(135deg, var(--wp-lavender) 0%, #7c3aed 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--wp-radius-md);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px var(--wp-lavender-glow);
+}
+
+.upload-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #b89dff 0%, #8b5cf6 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(167, 139, 250, 0.35);
+}
+
+.upload-btn:disabled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wp-text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.create-room-btn {
+  flex: 1;
+  min-width: 220px;
+  padding: 0.95rem 1.75rem;
+  background: linear-gradient(135deg, var(--wp-coral) 0%, #e11d48 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--wp-radius-md);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 6px 20px var(--wp-coral-glow);
+  animation: pulse-glow-btn 2s infinite ease-in-out;
+}
+
+@keyframes pulse-glow-btn {
+  0%, 100% {
+    box-shadow: 0 6px 20px var(--wp-coral-glow);
+  }
+  50% {
+    box-shadow: 0 8px 28px rgba(251, 113, 133, 0.45);
+  }
+}
+
+.create-room-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--wp-coral-hover) 0%, #f43f5e 100%);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 8px 26px rgba(251, 113, 133, 0.45);
+}
+
+.create-room-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  animation: none;
+}
+
+.reset-btn {
+  padding: 0.9rem 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--wp-text-secondary);
+  border: 1px solid var(--wp-border-subtle);
+  border-radius: var(--wp-radius-md);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reset-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--wp-text-cream);
+}
+
+.reset-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   F. Benefits Row
+   -------------------------------------------------------------------------- */
+.benefits-section {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.benefit {
+  background: var(--wp-bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--wp-border-subtle);
+  border-radius: var(--wp-radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.benefit:hover {
+  transform: translateY(-2px);
+  border-color: var(--wp-border-accent);
+}
+
+.benefit-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.benefit-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.benefit-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--wp-text-cream);
+}
+
+.benefit-text {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--wp-text-secondary);
+  line-height: 1.35;
+}
+
+/* --------------------------------------------------------------------------
+   G. Footer
+   -------------------------------------------------------------------------- */
+.upload-footer {
+  text-align: center;
+  padding: 0.5rem 0 1rem;
+  font-size: 0.78rem;
+  color: var(--wp-text-muted);
+}
+
+.upload-footer p {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Animation & Accessibility
+   -------------------------------------------------------------------------- */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Responsive Breakpoints
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .upload-page {
+    padding: 1rem;
+  }
+
+  .upload-header {
+    padding: 0.65rem 1rem;
+  }
+
+  .header-tagline {
+    display: none;
+  }
+
+  .hero-title {
+    font-size: 1.65rem;
+  }
+
+  .hero-subtitle {
+    font-size: 0.88rem;
+  }
+
+  .upload-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .dropzone-inner {
+    padding: 2rem 1rem;
+  }
+
+  .dropzone-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .dropzone-title {
+    font-size: 1.05rem;
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+
+  .upload-btn,
+  .create-room-btn,
+  .reset-btn {
+    width: 100%;
+  }
+
+  .benefits-section {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .benefit {
+    padding: 0.85rem 1rem;
+  }
+}

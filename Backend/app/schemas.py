@@ -15,6 +15,7 @@ class UploadResponse(BaseModel):
 class RoomCreateRequest(BaseModel):
     video_id: str
     owner_id: str
+    host_secret: str  # plain secret; backend stores only the bcrypt hash
 
 
 class RoomStateResponse(BaseModel):
