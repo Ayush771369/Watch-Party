@@ -487,6 +487,66 @@ function RoomPage() {
     }
   };
 
+  // Viewer-only recovery for a blocked audible autoplay. This runs inside a
+  // real user gesture and only drives the local element: it never changes the
+  // room's playback state or sends a host command.
+  const handleViewerJoinPlayback = () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const latest = latestStateRef.current;
+    isProgrammaticChange.current = true;
+
+    // Re-apply the most recent position so the viewer joins where the host is.
+    if (latest && Number.isFinite(latest.playback_position_seconds)) {
+      try {
+        video.currentTime = latest.playback_position_seconds;
+      } catch (err) {
+        console.warn('Could not seek before joining playback:', err);
+      }
+    }
+
+    diagLog('Immediately before viewer-join video.play()', {
+      videoState: formatDiagState(video),
+      currentTime: video.currentTime,
+      paused: video.paused,
+      readyState: video.readyState,
+    });
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise
+        .then(() => {
+          diagLog('viewer-join video.play() Promise resolved', {
+            videoState: formatDiagState(video),
+          });
+          setAutoplayBlocked(false);
+        })
+        .catch((err) => {
+          diagLog('viewer-join video.play() Promise rejected', {
+            errorName: err?.name,
+            errorMessage: err?.message,
+            videoState: formatDiagState(video),
+          });
+          if (err && err.name === 'NotAllowedError') {
+            setAutoplayBlocked(true);
+          } else if (!err || err.name !== 'AbortError') {
+            console.error('Failed to start playback:', err);
+          }
+        })
+        .finally(() => {
+          setTimeout(() => {
+            isProgrammaticChange.current = false;
+          }, 100);
+        });
+    } else {
+      setTimeout(() => {
+        isProgrammaticChange.current = false;
+      }, 100);
+    }
+  };
+
   // Copy invite link to clipboard
   const handleCopyInviteLink = async () => {
     const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
