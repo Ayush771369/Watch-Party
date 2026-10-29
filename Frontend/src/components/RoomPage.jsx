@@ -487,6 +487,36 @@ function RoomPage() {
     }
   };
 
+  // Copy invite link to clipboard
+  const handleCopyInviteLink = async () => {
+    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        // Fallback for non-HTTPS or older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = shareUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      setCopyFeedback('Link copied to clipboard!');
+      setTimeout(() => {
+        setCopied(false);
+        setCopyFeedback('');
+      }, 3000);
+    } catch (err) {
+      console.error('Failed to copy room link:', err);
+      setCopyFeedback('Could not copy automatically. Please copy the URL manually.');
+      setTimeout(() => setCopyFeedback(''), 4000);
+    }
+  };
+
   const isHost = userRole === 'host';
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -636,6 +666,43 @@ function RoomPage() {
 
           {/* Social Room Sidebar / Lounge Information */}
           <aside className="room-lounge">
+            {/* Card 2: Invite Friends & Share Link */}
+            <div className="lounge-card invite-card">
+              <div className="invite-header">
+                <span className="invite-title-icon">💌</span>
+                <div>
+                  <h2 className="invite-title">Invite your crew</h2>
+                  <p className="invite-subtitle">Send this link to friends so they can watch along</p>
+                </div>
+              </div>
+
+              <div className="invite-box">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareUrl}
+                  className="invite-url-input"
+                  aria-label="Room invitation link"
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyInviteLink}
+                  className={`copy-button ${copied ? 'copied' : ''}`}
+                  aria-label="Copy invitation link"
+                >
+                  <span className="button-icon">{copied ? '✓' : '📋'}</span>
+                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                </button>
+              </div>
+
+              {copyFeedback && (
+                <p className={`copy-feedback ${copied ? 'success' : 'error'}`} role="status">
+                  {copyFeedback}
+                </p>
+              )}
+            </div>
+
             {/* Tabbed sidebar: Chat and Participants */}
             <div className="sidebar-tabs">
               <button
