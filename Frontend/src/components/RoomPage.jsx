@@ -456,6 +456,37 @@ function RoomPage() {
     }
   }, [nickname]);
 
+  // Handle playback events from the video element
+  // These are called when the user interacts with the video player
+  const handlePlay = () => {
+    // Any successful play (including the join gesture) clears the prompt.
+    setAutoplayBlocked(false);
+    if (isProgrammaticChange.current) {
+      return;
+    }
+    if (videoRef.current) {
+      sendPlaybackUpdate('play', videoRef.current.currentTime);
+    }
+  };
+
+  const handlePause = () => {
+    if (isProgrammaticChange.current) {
+      return;
+    }
+    if (videoRef.current) {
+      sendPlaybackUpdate('pause', videoRef.current.currentTime);
+    }
+  };
+
+  const handleSeeked = () => {
+    if (isProgrammaticChange.current) {
+      return;
+    }
+    if (videoRef.current) {
+      sendPlaybackUpdate('seek', videoRef.current.currentTime);
+    }
+  };
+
   const isHost = userRole === 'host';
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
