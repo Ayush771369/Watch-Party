@@ -50,6 +50,8 @@ function RoomPage() {
   const [copied, setCopied] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
 
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+
   // Nickname state
   const [nickname, setNickname] = useState('');
   const [nicknameError, setNicknameError] = useState('');
