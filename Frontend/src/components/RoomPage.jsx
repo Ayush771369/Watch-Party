@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import './RoomPage.css';
 
+// API/WebSocket base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // --- TEMPORARY DIAGNOSTIC LOGGING (Playback timing investigation) ---
@@ -24,9 +25,20 @@ const formatDiagState = (video) => {
 };
 // --------------------------------------------------------------------
 
+
 // WebSocket reconnect backoff: 1s, 2s, 4s, 8s, then hold at 10s.
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 10000;
+
+// Nickname validation constants
+const NICKNAME_MIN = 3;
+const NICKNAME_MAX = 20;
+const MESSAGE_MAX = 200;
+
+// Maximum chat history to keep in memory
+const MAX_CHAT_HISTORY = 100;
+
+// --------------------------------------------------------------------
 
 function RoomPage() {
   const { roomId } = useParams();
@@ -37,9 +49,21 @@ function RoomPage() {
   const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'connected' | 'disconnected'
   const [copied, setCopied] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
-  // Set when the browser refuses audible autoplay; cleared once playback starts.
-  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
+  // Nickname state
+  const [nickname, setNickname] = useState('');
+  const [nicknameError, setNicknameError] = useState('');
+  const [nicknameSubmitted, setNicknameSubmitted] = useState(false);
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [showChatTab, setShowChatTab] = useState(true); // true = Chat, false = Participants
+
+  // Participants state
+  const [participants, setParticipants] = useState([]);
+
+  // Video refs
   const videoRef = useRef(null);
   const wsRef = useRef(null);
   // Flag to track if change is from WebSocket (not user interaction)
@@ -224,13 +248,6 @@ function RoomPage() {
           const data = JSON.parse(event.data);
           console.log('WebSocket message:', data);
 
-          // Note: userRole is determined from localStorage on mount (host secret presence)
-          // and must not be overridden by any WebSocket broadcast messages.
-          // Deliberately NOT setting userRole from state_sync/playback_update to prevent
-          // role swapping bugs (Bug 1): broadcast role fields can incorrectly overwrite
-          // client identity, and the guard `userRole === null` only prevents multiple sets,
-          // allowing the first (potentially wrong) set to stick.
-
           if (data.type === 'state_sync' || data.type === 'playback_update') {
             diagLog('WebSocket message received', {
               type: data.type,
@@ -245,6 +262,61 @@ function RoomPage() {
               is_playing: Boolean(data.is_playing),
             };
             applyPlaybackState(latestStateRef.current);
+          }
+          else if (data.type === 'request_nickname') {
+            // Server is asking for a nickname - show the nickname prompt
+            // This is handled by the UI, not by overriding userRole
+            diagLog('Received nickname request from server', data);
+          }
+          else if (data.type === 'participant_joined') {
+            // Add new participant to the list
+            setParticipants(prev => {
+              // Check if already in list
+              if (prev.some(p => p.nickname === data.nickname)) {
+                return prev;
+              }
+              return [...prev, {
+                nickname: data.nickname,
+                role: data.role,
+                connected_at: new Date(),
+              }];
+            });
+            diagLog('Participant joined:', data);
+          }
+          else if (data.type === 'participant_left') {
+            // Remove participant from the list
+            setParticipants(prev => prev.filter(p => p.nickname !== data.nickname));
+            diagLog('Participant left:', data);
+          }
+          else if (data.type === 'chat_message') {
+            // Add chat message to the list
+            setChatMessages(prev => {
+              // Prevent duplicates if same message arrives twice
+              const last = prev[prev.length - 1];
+              if (last && last.nickname === data.nickname && last.text === data.text) {
+                return prev;
+              }
+              return [...prev, {
+                nickname: data.nickname,
+                text: data.text,
+                timestamp: data.timestamp,
+              }];
+            });
+            diagLog('Chat message received:', data);
+          }
+          else if (data.type === 'participants') {
+            // Update participants list from server
+            setParticipants(data.participants);
+            diagLog('Participants updated:', data);
+          }
+          else if (data.type === 'chat_history') {
+            // Initialize chat history on connect
+            setChatMessages(data.chat_history);
+            diagLog('Chat history loaded:', data);
+          }
+          else if (data.type === 'error') {
+            setError(data.message || 'Unknown error');
+            diagLog('WebSocket error:', data);
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);
@@ -296,8 +368,9 @@ function RoomPage() {
         ws.close();
       }
     };
-  }, [roomId, applyPlaybackState]);
+  }, [roomId]);
 
+  // Send playback update to backend
   const sendPlaybackUpdate = (action, time) => {
     // Only host can control playback
     if (userRole !== 'host') {
@@ -314,152 +387,75 @@ function RoomPage() {
     }
   };
 
-  // Viewer-only recovery for a blocked audible autoplay. This runs inside a
-  // real user gesture and only drives the local element: it never changes the
-  // room's playback state or sends a host command.
-  const handleViewerJoinPlayback = () => {
-    const video = videoRef.current;
-    if (!video) {
+  // Handle chat input send
+  const handleSendChat = () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || userRole === null) {
       return;
     }
-
-    const latest = latestStateRef.current;
-    isProgrammaticChange.current = true;
-
-    // Re-apply the most recent position so the viewer joins where the host is.
-    if (latest && Number.isFinite(latest.playback_position_seconds)) {
-      try {
-        video.currentTime = latest.playback_position_seconds;
-      } catch (err) {
-        console.warn('Could not seek before joining playback:', err);
-      }
-    }
-
-    diagLog('Immediately before viewer-join video.play()', {
-      videoState: formatDiagState(video),
-      currentTime: video.currentTime,
-      paused: video.paused,
-      readyState: video.readyState,
-    });
-    const playPromise = video.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise
-        .then(() => {
-          diagLog('viewer-join video.play() Promise resolved', {
-            videoState: formatDiagState(video),
-          });
-          setAutoplayBlocked(false);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'chat_message',
+          nickname: nickname || 'Anonymous',
+          text: trimmed,
         })
-        .catch((err) => {
-          diagLog('viewer-join video.play() Promise rejected', {
-            errorName: err?.name,
-            errorMessage: err?.message,
-            videoState: formatDiagState(video),
-          });
-          if (err && err.name === 'NotAllowedError') {
-            setAutoplayBlocked(true);
-          } else if (!err || err.name !== 'AbortError') {
-            console.error('Failed to start playback:', err);
-          }
+      );
+    }
+    setChatInput('');
+  };
+
+  // Handle nickname submission
+  const handleNicknameSubmit = (e) => {
+    e.preventDefault();
+    const trimmed = nickname.trim();
+    if (!trimmed) {
+      setNicknameError('Nickname cannot be empty');
+      return;
+    }
+    if (trimmed.length < NICKNAME_MIN) {
+      setNicknameError(`Nickname must be at least ${NICKNAME_MIN} characters`);
+      return;
+    }
+    if (trimmed.length > NICKNAME_MAX) {
+      setNicknameError(`Nickname must be at most ${NICKNAME_MAX} characters`);
+      return;
+    }
+    // Send nickname to server
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'nickname',
+          nickname: trimmed,
         })
-        .finally(() => {
-          setTimeout(() => {
-            isProgrammaticChange.current = false;
-          }, 100);
-        });
-    } else {
-      setTimeout(() => {
-        isProgrammaticChange.current = false;
-      }, 100);
+      );
+    }
+    setNickname(trimmed);
+    setNicknameError('');
+    setNicknameSubmitted(true);
+  };
+
+  // Handle nickname received from server response
+  const handleNicknameResponse = (data) => {
+    if (data.type === 'error') {
+      setNicknameError(data.message);
+      setNickname('');
+    } else if (data.type === 'nickname_accepted') {
+      setNickname(data.nickname);
+      setNicknameError('');
+      setNicknameSubmitted(true);
     }
   };
 
-  const handlePlay = () => {
-    // Any successful play (including the join gesture) clears the prompt.
-    setAutoplayBlocked(false);
-    // Note: sendPlaybackUpdate always sends to the backend regardless of
-    // isProgrammaticChange — that flag only affects applyPlaybackState,
-    // not outbound playback-control messages.
-    if (videoRef.current) {
-      sendPlaybackUpdate('play', videoRef.current.currentTime);
+  // Clear error after typing
+  useEffect(() => {
+    if (nickname) {
+      setNicknameError('');
     }
-  };
-
-  const handlePause = () => {
-    if (videoRef.current) {
-      sendPlaybackUpdate('pause', videoRef.current.currentTime);
-    }
-  };
-
-  const handleSeeked = () => {
-    // Note: sendPlaybackUpdate always sends to the backend regardless of
-    // isProgrammaticChange — that flag only affects applyPlaybackState,
-    // not outbound playback-control messages.
-    if (videoRef.current) {
-      sendPlaybackUpdate('seek', videoRef.current.currentTime);
-    }
-  };
-
-  const handleCopyInviteLink = async () => {
-    const shareUrl = window.location.href;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(shareUrl);
-      } else {
-        // Fallback for non-HTTPS or older browsers
-        const textArea = document.createElement('textarea');
-        textArea.value = shareUrl;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-      }
-      setCopied(true);
-      setCopyFeedback('Link copied to clipboard!');
-      setTimeout(() => {
-        setCopied(false);
-        setCopyFeedback('');
-      }, 3000);
-    } catch (err) {
-      console.error('Failed to copy room link:', err);
-      setCopyFeedback('Could not copy automatically. Please copy the URL manually.');
-      setTimeout(() => setCopyFeedback(''), 4000);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="room-page">
-        <div className="state-card loading-card">
-          <div className="popcorn-loader">
-            <span className="popcorn-icon">🍿</span>
-            <div className="glow-ring"></div>
-          </div>
-          <h2>Setting up movie night...</h2>
-          <p className="state-subtitle">Connecting to your room and synchronizing stream</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="room-page">
-        <div className="state-card error-card">
-          <div className="state-icon error-bubble">⚠️</div>
-          <h2>Unable to Join Room</h2>
-          <p className="state-subtitle">{error}</p>
-          <Link to="/" className="action-button primary-btn">
-            ← Back to Upload
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  }, [nickname]);
 
   const isHost = userRole === 'host';
+
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
 
   return (
@@ -607,96 +603,99 @@ function RoomPage() {
 
           {/* Social Room Sidebar / Lounge Information */}
           <aside className="room-lounge">
-            {/* Card 1: Room Headline & Vibe */}
-            <div className="lounge-card room-summary-card">
-              <div className="card-header">
-                <div className="badge-wrapper">
-                  <span className="party-badge">🍿 Movie Night</span>
-                </div>
-                <span className="room-tagline">
-                  {isHost ? "You're hosting movie night" : "You're watching together"}
-                </span>
-              </div>
-
-              <div className="room-meta-row">
-                <span className="meta-label">Room ID</span>
-                <code className="meta-code" title={roomId}>
-                  {roomId}
-                </code>
-              </div>
-
-              <div className="room-meta-row">
-                <span className="meta-label">Your Role</span>
-                <span className={`meta-role-pill ${userRole || 'viewer'}`}>
-                  {isHost ? '👑 Room Host (Controller)' : '👀 Viewer (Listener)'}
-                </span>
-              </div>
+            {/* Tabbed sidebar: Chat and Participants */}
+            <div className="sidebar-tabs">
+              <button
+                className={`sidebar-tab ${showChatTab ? 'active' : ''}`}
+                onClick={() => setShowChatTab(true)}
+                aria-label="Show Chat tab"
+              >
+                Chat <span className="tab-count">{chatMessages.length}</span>
+              </button>
+              <button
+                className={`sidebar-tab ${!showChatTab ? 'active' : ''}`}
+                onClick={() => setShowChatTab(false)}
+                aria-label="Show Participants tab"
+              >
+                Participants <span className="tab-count">{participants.length}</span>
+              </button>
             </div>
 
-            {/* Card 2: Invite Friends & Share Link */}
-            <div className="lounge-card invite-card">
-              <div className="invite-header">
-                <span className="invite-title-icon">💌</span>
-                <div>
-                  <h2 className="invite-title">Invite your crew</h2>
-                  <p className="invite-subtitle">Send this link to friends so they can watch along</p>
+            {/* Chat Tab */}
+            {showChatTab && (
+              <div className="sidebar-tab-content chat-tab">
+                {/* Chat messages */}
+                <div className="chat-messages">
+                  {chatMessages.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`chat-message ${msg.nickname === nickname ? 'my-message' : 'other-message'}`}
+                    >
+                      <span className="message-nickname">{msg.nickname}:</span>
+                      <span className="message-text">{msg.text}</span>
+                      <span className="message-time">
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  ))}
+                  {chatMessages.length === 0 && (
+                    <p className="empty-chat">No messages yet. Start the conversation!</p>
+                  )}
+                </div>
+
+                {/* Chat input */}
+                <div className="chat-input-area">
+                  <div className="input-wrapper">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSendChat();
+                        }
+                      }}
+                      placeholder="Type a message..."
+                      maxLength={200}
+                      disabled={userRole !== 'host' && userRole !== 'viewer'}
+                      className="chat-input"
+                      aria-label="Chat input"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendChat}
+                      className="send-button"
+                      disabled={userRole === null}
+                      aria-label="Send message"
+                    >
+                      ▶
+                    </button>
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div className="invite-box">
-                <input
-                  type="text"
-                  readOnly
-                  value={shareUrl}
-                  className="invite-url-input"
-                  aria-label="Room invitation link"
-                  onFocus={(e) => e.target.select()}
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyInviteLink}
-                  className={`copy-button ${copied ? 'copied' : ''}`}
-                  aria-label="Copy invitation link"
-                >
-                  <span className="button-icon">{copied ? '✓' : '📋'}</span>
-                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                </button>
-              </div>
-
-              {copyFeedback && (
-                <p className={`copy-feedback ${copied ? 'success' : 'error'}`} role="status">
-                  {copyFeedback}
-                </p>
-              )}
-            </div>
-
-            {/* Card 3: Cozy Watch Tips */}
-            <div className="lounge-card tips-card">
-              <h3 className="tips-title">
-                <span className="tips-icon">💡</span> Cozy Watch Tips
-              </h3>
-              <ul className="tips-list">
-                <li>
-                  <span className="bullet-dot"></span>
-                  <span>Audio volume and fullscreen are always in your personal control.</span>
-                </li>
-                <li>
-                  <span className="bullet-dot"></span>
-                  <span>Stream is synced with sub-second precision over WebSockets.</span>
-                </li>
-                {isHost ? (
-                  <li>
-                    <span className="bullet-dot"></span>
-                    <span>Keep this tab open as the host to keep party controls active.</span>
-                  </li>
-                ) : (
-                  <li>
-                    <span className="bullet-dot"></span>
-                    <span>If your video gets paused by the host, it will resume automatically.</span>
-                  </li>
+            {/* Participants Tab */}
+            {!showChatTab && (
+              <div className="sidebar-tab-content participants-tab">
+                {participants.length === 0 && (
+                  <p className="empty-participants">No participants yet.</p>
                 )}
-              </ul>
-            </div>
+                <ul className="participants-list">
+                  {participants.map((p, idx) => (
+                    <li
+                      key={idx}
+                      className={`participant-item ${p.role === 'host' ? 'host' : 'viewer'}`}
+                    >
+                      <span className="participant-nickname">{p.nickname}</span>
+                      <span className="participant-role {p.role}">
+                        {p.role === 'host' ? '👑 Host' : '🍿 Viewer'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </aside>
         </main>
       </div>
