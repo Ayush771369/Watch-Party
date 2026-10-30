@@ -30,9 +30,9 @@ const formatDiagState = (video) => {
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 10000;
 
-// Nickname validation constants
-const NICKNAME_MIN = 3;
-const NICKNAME_MAX = 20;
+// Nickname validation constants (V2 Phase 1: min 1, max 24)
+const NICKNAME_MIN = 1;
+const NICKNAME_MAX = 24;
 const MESSAGE_MAX = 200;
 
 // Maximum chat history to keep in memory
@@ -55,7 +55,7 @@ function RoomPage() {
   // Nickname state
   const [nickname, setNickname] = useState('');
   const [nicknameError, setNicknameError] = useState('');
-  const [nicknameSubmitted, setNicknameSubmitted] = useState(false);
+  const [isNicknameProvided, setIsNicknameProvided] = useState(false);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -73,6 +73,9 @@ function RoomPage() {
   // Latest authoritative playback state from the server. Retained even while the
   // <video> element is not mounted, so it can be applied the moment it is.
   const latestStateRef = useRef(null);
+
+  // Track nickname submission state per WebSocket reconnect
+  const [nicknameSubmitted, setNicknameSubmitted] = useState(false);
 
   // Apply an authoritative playback state to the mounted <video> element.
   // Returns false when the element does not exist yet — the caller still keeps
@@ -223,23 +226,6 @@ function RoomPage() {
         console.log('WebSocket connected');
         setWsStatus('connected');
         reconnectAttempts = 0;
-        // Step 2: Send authentication message
-        const hostSecret = localStorage.getItem(`host_secret_${roomId}`);
-        if (hostSecret) {
-          ws.send(
-            JSON.stringify({
-              type: 'auth',
-              secret: hostSecret,
-            })
-          );
-        } else {
-          ws.send(
-            JSON.stringify({
-              type: 'auth',
-              role: 'viewer',
-            })
-          );
-        }
       };
 
       ws.onmessage = (event) => {
@@ -269,6 +255,9 @@ function RoomPage() {
             // Server is asking for a nickname - show the nickname prompt
             // This is handled by the UI, not by overriding userRole
             diagLog('Received nickname request from server', data);
+            setIsNicknameProvided(false);
+            setNickname('');
+            setNicknameError('');
           }
           else if (data.type === 'participant_joined') {
             // Add new participant to the list
@@ -319,6 +308,24 @@ function RoomPage() {
           else if (data.type === 'error') {
             setError(data.message || 'Unknown error');
             diagLog('WebSocket error:', data);
+          }
+          else if (data.type === 'auth_response') {
+            // Server has authenticated the user; update role
+            setUserRole(data.role);
+            diagLog('Auth response received:', data);
+          }
+          else if (data.type === 'nickname_accepted') {
+            // Nickname was accepted by server
+            setNickname(data.nickname);
+            setNicknameError('');
+            setIsNicknameProvided(true);
+            diagLog('Nickname accepted:', data);
+          }
+          else if (data.type === 'nickname_error') {
+            // Nickname was rejected by server
+            setNicknameError(data.message);
+            setNickname('');
+            diagLog('Nickname error received:', data);
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);
@@ -416,7 +423,7 @@ function RoomPage() {
       return;
     }
     if (trimmed.length < NICKNAME_MIN) {
-      setNicknameError(`Nickname must be at least ${NICKNAME_MIN} characters`);
+      setNicknameError(`Nickname must be at least ${NICKNAME_MIN} character`);
       return;
     }
     if (trimmed.length > NICKNAME_MAX) {
@@ -435,18 +442,6 @@ function RoomPage() {
     setNickname(trimmed);
     setNicknameError('');
     setNicknameSubmitted(true);
-  };
-
-  // Handle nickname received from server response
-  const handleNicknameResponse = (data) => {
-    if (data.type === 'error') {
-      setNicknameError(data.message);
-      setNickname('');
-    } else if (data.type === 'nickname_accepted') {
-      setNickname(data.nickname);
-      setNicknameError('');
-      setNicknameSubmitted(true);
-    }
   };
 
   // Clear error after typing
@@ -580,6 +575,43 @@ function RoomPage() {
   const isHost = userRole === 'host';
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+  // Nickname prompt section - shown before the participant joins
+  const nicknamePrompt = () => {
+    if (isNicknameProvided && nickname) {
+      // Nickname has been provided and accepted, show the room UI
+      return null;
+    }
+    // Show nickname prompt before joining
+    return (
+      <div className="nickname-prompt">
+        <h2>Join Watch Party</h2>
+        {nicknameError && (
+          <p className="nickname-error">{nicknameError}</p>
+        )}
+        <form onSubmit={handleNicknameSubmit} className="nickname-form">
+          <div className="nickname-input-group">
+            <input
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Enter your nickname"
+              maxLength={24}
+              minLength={1}
+              className="nickname-input"
+              aria-label="Nickname"
+            />
+            <button
+              type="submit"
+              className="nickname-submit-button"
+            >
+              Join Room
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  };
 
   return (
     <div className="room-page">
@@ -762,6 +794,9 @@ function RoomPage() {
                 </p>
               )}
             </div>
+
+            {/* Nickname prompt - shown before participant is authenticated */}
+            {nicknamePrompt()}
 
             {/* Tabbed sidebar: Chat and Participants */}
             <div className="sidebar-tabs">

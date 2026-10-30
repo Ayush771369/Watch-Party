@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect  # type: ignore
 from sqlalchemy.orm import Session  # type: ignore
@@ -13,7 +13,7 @@ from app.auth import verify_secret
 router = APIRouter()
 
 # Active WebSocket connections grouped by room_id
-_connections: dict[str, list[WebSocket]] = {}
+_connections: dict[str, set[WebSocket]] = {}
 
 # Track rooms that have been initialized (have at least one connected client)
 _initialized_rooms: set[str] = set()
@@ -26,7 +26,7 @@ def _get_room_data(room_id: str) -> dict:
     """Get or initialize in-memory room data."""
     if room_id not in _room_data:
         _room_data[room_id] = {
-            "nicknames": {},          # nickname -> websocket
+            "nicknames": {},          # nickname (lowercase) -> websocket
             "participants": [],       # list[{"nickname": str, "role": str, "connected_at": datetime}]
             "chat_history": [],       # list[{"nickname": str, "text": str, "timestamp": datetime}]
         }
@@ -36,12 +36,17 @@ def _get_room_data(room_id: str) -> dict:
 async def _broadcast_json(room_id: str, message: dict, exclude_ws: Optional[WebSocket] = None):
     """Broadcast a JSON message to all WebSocket connections in a room."""
     payload = json.dumps(message)
-    for ws in _connections.get(room_id, []):
+    for ws in _connections.get(room_id, set()):
         if ws != exclude_ws:
             try:
                 await ws.send_text(payload)
             except Exception:
                 pass
+
+
+def _normalize_nickname(nickname: str) -> str:
+    """Normalize nickname: trim whitespace and lowercase for comparison."""
+    return nickname.strip().lower()
 
 
 @router.websocket("/ws/{room_id}")
@@ -59,8 +64,8 @@ async def room_websocket(websocket: WebSocket, room_id: str):
 
     # --- register this connection ---
     if room_id not in _connections:
-        _connections[room_id] = []
-    _connections[room_id].append(websocket)
+        _connections[room_id] = set()
+    _connections[room_id].add(websocket)
 
     # --- initialize room data if needed ---
     room_data = _get_room_data(room_id)
@@ -125,13 +130,12 @@ async def room_websocket(websocket: WebSocket, room_id: str):
 
         # --- send authenticated role to client ---
         await websocket.send_json({
-            "type": "state_sync",
-            "playback_position_seconds": state.playback_position_seconds,
-            "is_playing": state.is_playing,
+            "type": "auth_response",
+            "role": role,
         })
 
         # --- Nickname setup ---
-        max_retries = 3
+        max_retries = 5
         retry_count = 0
 
         while nickname is None and retry_count < max_retries:
@@ -151,9 +155,12 @@ async def room_websocket(websocket: WebSocket, room_id: str):
                 retry_count += 1
                 continue
 
-            nickname = data.get("nickname", "").strip()
+            nickname = data.get("nickname", "")
 
-            # Validate nickname
+            # Normalize nickname: trim whitespace
+            nickname = nickname.strip() if nickname else ""
+
+            # Validate nickname length (V2 Phase 1: min 1, max 24)
             if not nickname:
                 await websocket.send_json({
                     "type": "error",
@@ -163,26 +170,18 @@ async def room_websocket(websocket: WebSocket, room_id: str):
                 retry_count += 1
                 continue
 
-            if len(nickname) < 3:
+            if len(nickname) > 24:
                 await websocket.send_json({
                     "type": "error",
-                    "message": "Nickname must be at least 3 characters.",
+                    "message": "Nickname must be at most 24 characters.",
                 })
                 nickname = None
                 retry_count += 1
                 continue
 
-            if len(nickname) > 20:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "Nickname must be at most 20 characters.",
-                })
-                nickname = None
-                retry_count += 1
-                continue
-
-            # Check for duplicate nickname
-            if nickname in room_data["nicknames"]:
+            # Check for duplicate nickname (case-insensitive via normalized form)
+            normalized = _normalize_nickname(nickname)
+            if normalized in room_data["nicknames"]:
                 await websocket.send_json({
                     "type": "error",
                     "message": f"Nickname '{nickname}' is already taken. Please choose another.",
@@ -191,10 +190,10 @@ async def room_websocket(websocket: WebSocket, room_id: str):
                 retry_count += 1
                 continue
 
-            # Accept the nickname
-            room_data["nicknames"][nickname] = websocket
+            # Accept the nickname (store normalized form for lookup)
+            room_data["nicknames"][normalized] = websocket
             room_data["participants"].append({
-                "nickname": nickname,
+                "nickname": nickname,  # Store original trimmed nickname for display
                 "role": role,
                 "connected_at": datetime.utcnow(),
             })
@@ -206,10 +205,16 @@ async def room_websocket(websocket: WebSocket, room_id: str):
                 "role": role,
             })
 
-            # Broadcast updated participants list to all clients
+            # Broadcast updated participants list to all clients (including sender)
             await websocket.send_json({
                 "type": "participants",
                 "participants": room_data["participants"],
+            })
+
+            # Also send the new participant their own nickname confirmation
+            await websocket.send_json({
+                "type": "nickname_accepted",
+                "nickname": nickname,
             })
 
         # --- process playback update messages ---
@@ -262,6 +267,15 @@ async def room_websocket(websocket: WebSocket, room_id: str):
                 action = data.get("action")
                 position = data.get("playback_position_seconds")
 
+                # Only host can control playback - verify role
+                if role != "host":
+                    # Send error to client, but don't break the connection
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Only the host can control playback.",
+                    })
+                    continue
+
                 if action and position is not None and state is not None:
                     if action == "play":
                         state.is_playing = True
@@ -285,11 +299,13 @@ async def room_websocket(websocket: WebSocket, room_id: str):
     # ... rest continues
     finally:
         # --- cleanup on disconnect ---
-        _connections.get(room_id, []).remove(websocket) if websocket in _connections.get(room_id, []) else None
+        _connections.get(room_id, set()).discard(websocket)
 
         # Remove nickname and participant on disconnect
-        if nickname and nickname in room_data.get("nicknames", {}):
-            del room_data["nicknames"][nickname]
+        if nickname:
+            normalized = _normalize_nickname(nickname)
+            if normalized in room_data.get("nicknames", {}):
+                del room_data["nicknames"][normalized]
 
         room_data["participants"] = [
             p for p in room_data["participants"] if p["nickname"] != nickname
@@ -303,11 +319,13 @@ async def room_websocket(websocket: WebSocket, room_id: str):
             })
 
         # Broadcast updated participants list
-        await websocket.send_json({
-            "type": "participants",
-            "participants": room_data["participants"],
-        })
+        if nickname:
+            await websocket.send_json({
+                "type": "participants",
+                "participants": room_data["participants"],
+            })
 
+        # Only remove room data if no connections remain
         if not _connections.get(room_id):
             _connections.pop(room_id, None)
             _initialized_rooms.discard(room_id)
