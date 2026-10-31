@@ -9,6 +9,15 @@ from app.database import SessionLocal
 from app.models.room import Room, RoomState
 from app.schemas import PlaybackUpdate
 from app.auth import verify_secret
+from app.chat_manager import (
+    ChatMessage,
+    ChatRoom,
+    get_chat_room,
+    broadcast_chat_message,
+    get_rate_limiter,
+    RateLimiter,
+)
+
 
 router = APIRouter()
 
@@ -33,6 +42,11 @@ def _get_room_data(room_id: str) -> dict:
     return _room_data[room_id]
 
 
+def _normalize_nickname(nickname: str) -> str:
+    """Normalize nickname: trim whitespace and lowercase for comparison."""
+    return nickname.strip().lower()
+
+
 async def _broadcast_json(room_id: str, message: dict, exclude_ws: Optional[WebSocket] = None):
     """Broadcast a JSON message to all WebSocket connections in a room."""
     payload = json.dumps(message)
@@ -42,11 +56,6 @@ async def _broadcast_json(room_id: str, message: dict, exclude_ws: Optional[WebS
                 await ws.send_text(payload)
             except Exception:
                 pass
-
-
-def _normalize_nickname(nickname: str) -> str:
-    """Normalize nickname: trim whitespace and lowercase for comparison."""
-    return nickname.strip().lower()
 
 
 @router.websocket("/ws/{room_id}")
@@ -78,15 +87,11 @@ async def room_websocket(websocket: WebSocket, room_id: str):
         "is_playing": state.is_playing,
     })
 
-    # Send initial participants list and chat history
-    await websocket.send_json({
-        "type": "participants",
-        "participants": room_data["participants"],
-    })
-
+    # Send initial participants list and chat history via chat_manager
+    chat_room = get_chat_room(room_id)
     await websocket.send_json({
         "type": "chat_history",
-        "chat_history": room_data["chat_history"][-50:]  # last 50 messages
+        "messages": chat_room.get_history(),
     })
 
     try:
@@ -217,7 +222,7 @@ async def room_websocket(websocket: WebSocket, room_id: str):
                 "nickname": nickname,
             })
 
-        # --- process playback update messages ---
+        # --- process playback update and chat messages ---
         while True:
             raw = await websocket.receive_text()
             try:
@@ -230,36 +235,57 @@ async def room_websocket(websocket: WebSocket, room_id: str):
 
             # Handle chat messages
             if data.get("type") == "chat_message":
-                text = data.get("text", "").strip()
-                if not text:
-                    continue
+                text = data.get("message", "").strip()
 
-                # Validate message length
-                if len(text) > 200:
+                # Rate limiting: max 5 messages per 5-second window per connection
+                conn_id = id(websocket)
+                current_time = datetime.utcnow().timestamp()
+                rate_limiter = get_rate_limiter()
+                if not rate_limiter.check_rate_limit(conn_id, current_time):
                     await websocket.send_json({
                         "type": "error",
-                        "message": "Message must be at most 200 characters.",
+                        "message": "Rate limit exceeded. Maximum 5 messages per 5 seconds.",
                     })
                     continue
 
-                # Add to chat history
-                room_data["chat_history"].append({
-                    "nickname": nickname,
-                    "text": text,
-                    "timestamp": datetime.utcnow(),
-                })
-                # Keep chat history bounded (last 100 messages)
-                if len(room_data["chat_history"]) > 100:
-                    room_data["chat_history"] = room_data["chat_history"][-100:]
+                # Validate message is not empty after trimming
+                if not text:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Message cannot be empty.",
+                    })
+                    continue
 
-                # Broadcast chat message to all other clients
-                chat_msg = {
+                # Validate message length (max 500 characters)
+                if len(text) > 500:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Message must be at most 500 characters.",
+                    })
+                    continue
+
+                # Use the authenticated nickname and role from the session
+                # Nickname is guaranteed to be set at this point (completed nickname setup above)
+                effective_nickname = nickname
+                effective_role = role
+
+                # Create chat message with server-generated ID and timestamp
+                chat_msg = ChatMessage(nickname=effective_nickname, role=effective_role, message=text)
+
+                # Add to chat room history
+                room_chat = get_chat_room(room_id)
+                room_chat.add_message(chat_msg)
+
+                # Broadcast to all clients in the room (including sender)
+                await broadcast_chat_message(room_id, {
                     "type": "chat_message",
-                    "nickname": nickname,
-                    "text": text,
-                    "timestamp": room_data["chat_history"][-1]["timestamp"],
-                }
-                await _broadcast_json(room_id, chat_msg)
+                    "id": chat_msg.id,
+                    "nickname": chat_msg.nickname,
+                    "role": chat_msg.role,
+                    "message": chat_msg.message,
+                    "timestamp": chat_msg.timestamp.isoformat(),
+                }, exclude_ws=None)  # Include sender
+
                 continue
 
             # Handle playback_update messages
@@ -330,5 +356,13 @@ async def room_websocket(websocket: WebSocket, room_id: str):
             _connections.pop(room_id, None)
             _initialized_rooms.discard(room_id)
             _room_data.pop(room_id, None)
+            # Clean up chat room from chat_manager registry
+            from app.chat_manager import cleanup_room
+            cleanup_room(room_id)
+
+        # Clean up rate-limit state for this disconnected connection
+        conn_id = id(websocket)
+        rate_limiter = get_rate_limiter()
+        rate_limiter.remove_connection(conn_id)
 
         db.close()
